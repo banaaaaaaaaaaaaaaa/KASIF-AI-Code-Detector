@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SHAP Waterfall Details</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+</head>
+
+<body>
+    <main class="details-page">
+        <section class="details-card">
+            <a href="/" class="details-back-link">← Back to detector</a>
+
+            <div class="waterfall-details-layout">
+                <!-- LEFT: BIG WATERFALL PLOT -->
+                <div class="waterfall-details-main">
+                    <h1>SHAP Waterfall Explanation</h1>
+
+                    <p class="details-intro">
+                        This page shows a detailed SHAP waterfall-style chart for the top features.
+                        Positive values support AI-generated prediction, while negative values support Human-written prediction.
+                    </p>
+
+                    <div class="details-section">
+                        <h2>SHAP Waterfall Plot</h2>
+                        <p>
+                            At The chart below each bar shows how strongly a feature pushed the prediction.
+                        </p>
+
+                        <div id="waterfallPlot" class="waterfall-plot-box"></div>
+                    </div>
+                </div>
+
+                <!-- RIGHT: EXPLANATION CARDS -->
+                <aside class="waterfall-details-side">
+                    <div class="details-section details-side-section">
+                        <h2>What is SHAP?</h2>
+                        <p>
+                            SHAP is an explainability method that shows how much each feature influenced the model prediction.
+                            In this project, SHAP helps explain why the model predicted code as AI-generated, Human-written,
+                            or Mixed.
+                        </p>
+                    </div>
+
+                    <div class="details-section details-side-section">
+                        <h2>How to read the colors?</h2>
+
+                        <div class="details-grid details-grid--side">
+                            <div class="details-mini-card danger-card">
+                                <h3>Red bar</h3>
+                                <p>If the bar is red, this feature pushed the prediction toward AI-generated code.</p>
+                            </div>
+
+                            <div class="details-mini-card success-card">
+                                <h3>Green bar</h3>
+                                <p>If the bar is green, this feature pushed the prediction toward Human-written code.</p>
+                            </div>
+
+                            <div class="details-mini-card">
+                                <h3>Longer bar</h3>
+                                <p>A longer bar means the feature had a stronger effect on the prediction.</p>
+                            </div>
+
+                            <div class="details-mini-card">
+                                <h3>Shorter bar</h3>
+                                <p>A shorter bar means the feature had a smaller effect compared with the others.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                  
+                </aside>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        function readJson(key) {
+            try {
+                return JSON.parse(sessionStorage.getItem(key) || "[]");
+            } catch {
+                return [];
+            }
+        }
+
+        function formatFeatureLabel(item) {
+            const feature = item.feature || item.display_name || item.feature_name || item.name || "-";
+            const value =
+                item.feature_value ??
+                item.value ??
+                item.raw_value ??
+                item.feature_raw_value ??
+                null;
+
+            if (value === null || value === undefined || value === "") {
+                return feature;
+            }
+
+            const numericValue = Number(value);
+            const shownValue = Number.isFinite(numericValue)
+                ? numericValue.toFixed(3)
+                : String(value);
+
+            return `${shownValue} = ${feature}`;
+        }
+
+        function getFeatureName(item) {
+            return item.feature || item.display_name || item.feature_name || item.name || "-";
+        }
+
+        function getFeatureExplanation(item) {
+            return item.explanation || "No explanation available.";
+        }
+
+        function renderDetailedWaterfall() {
+            const plotContainer = document.getElementById("waterfallPlot");
+            if (!plotContainer) return;
+
+            const features = readJson("kasif_top_features")
+                .slice()
+                .sort((a, b) => Math.abs(Number(b.shap_value || 0)) - Math.abs(Number(a.shap_value || 0)))
+                .slice(0, 20);
+
+            if (!features.length) {
+                plotContainer.innerHTML = `
+                    <div class="empty-state-box waterfall-empty">
+                        No analysis data found. Go back to the detector, run an analysis, then open this page again.
+                    </div>
+                `;
+                return;
+            }
+
+            /*
+                Plotly waterfall draws cumulative contributions.
+                Reversing makes the strongest features appear near the top visually.
+            */
+            const plotFeatures = [...features].reverse();
+
+            const yLabels = plotFeatures.map(formatFeatureLabel);
+            const xValues = plotFeatures.map((item) => Number(item.shap_value || 0));
+            const textValues = xValues.map((value) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}`);
+
+            const hoverData = plotFeatures.map((item) => {
+                const feature = getFeatureName(item);
+                const group = item.group || "Unmapped";
+                const type = item.feature_type || "-";
+                const direction = item.direction || "-";
+                const explanation = getFeatureExplanation(item);
+
+                return [
+                    `Feature: ${feature}`,
+                    `Group: ${group}`,
+                
+                    `Direction: ${direction}`,
+                    explanation
+                ].join("<br>");
+            });
+
+            const data = [
+                {
+                    type: "waterfall",
+                    orientation: "h",
+                    y: yLabels,
+                    x: xValues,
+                    measure: xValues.map(() => "relative"),
+                    text: textValues,
+                    textposition: "inside",
+                    cliponaxis: false,
+                    hovertemplate:
+                        "<b>%{y}</b><br>" +
+                        "SHAP value: %{x:.4f}<br>" +
+                        "%{customdata}<extra></extra>",
+                    customdata: hoverData,
+                    connector: {
+                        line: {
+                            color: "#c7d2df",
+                            width: 1.5,
+                            dash: "dot"
+                        }
+                    },
+                    increasing: {
+                        marker: {
+                            color: "#ff0051"
+                        }
+                    },
+                    decreasing: {
+                        marker: {
+                                color: "#16a34a"
+
+                        }
+                    },
+                    totals: {
+                        marker: {
+                            color: "#0f2a4a"
+                        }
+                    }
+                }
+            ];
+
+            const layout = {
+                height: Math.max(850, features.length * 44),
+                margin: {
+                    l: 330,
+                    r: 70,
+                    t: 30,
+                    b: 70
+                },
+                paper_bgcolor: "#ffffff",
+                plot_bgcolor: "#ffffff",
+                showlegend: false,
+                font: {
+                    family: "Inter, Segoe UI, sans-serif",
+                    size: 15,
+                    color: "#0f2a4a"
+                },
+                xaxis: {
+                    title: {
+                        text: "SHAP contribution",
+                        font: { size: 16 }
+                    },
+                    zeroline: true,
+                    zerolinecolor: "#aebccc",
+                    zerolinewidth: 1.5,
+                    gridcolor: "#e7eef5",
+                    tickfont: {
+                        size: 14
+                    }
+                },
+                yaxis: {
+                    automargin: true,
+                    tickfont: {
+                        size: 15,
+                        color: "#0f2a4a"
+                    }
+                }
+            };
+
+            Plotly.newPlot("waterfallPlot", data, layout, {
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false
+            });
+        }
+
+        renderDetailedWaterfall();
+    </script>
+</body>
+</html>

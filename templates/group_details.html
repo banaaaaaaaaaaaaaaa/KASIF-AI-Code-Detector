@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Group Influence Details</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <main class="details-page">
+        <section class="details-card">
+            <a href="/" class="details-back-link">← Back to detector</a>
+
+        <div class="details-layout details-layout--stacked">
+    <div class="details-main-column">
+        <h1>Group Influence Details</h1>
+
+        <p class="details-intro"></p>
+
+        <div class="details-section">
+            <h2>Top Features Affecting the Prediction.</h2>
+            <p>
+                These are the most influential features behind the prediction.
+                Each feature is ranked by its SHAP value and assigned to a software-engineering group.
+            </p>
+
+            <div class="details-table-wrap">
+                <table class="details-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Feature</th>
+                            <th>Type</th>
+                            <th>Group</th>
+                            <th>SHAP Value</th>
+                            <th>Direction</th>
+                            <th>Feature Explanation</th>
+                        </tr>
+                    </thead>
+                    <tbody id="topFeaturesBody">
+                        <tr>
+                            <td colspan="7">No analysis data found. Run an analysis first.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="details-section details-side-section">
+            <h2>Group Explanations</h2>
+            <div class="details-grid details-grid--side" id="groupExplanationGrid"></div>
+        </div>
+    </div>
+</div>                  
+
+                 
+        </section>
+    </main>
+
+    <script>
+        const GROUP_EXPLANATIONS = {
+            LEXICAL: "Lexical features look at the  style of the code, like naming, line length, keywords, and literals.",
+            SYNTACTIC: "Syntactic features look at the code structure, such as loops, conditions, nesting, and AST patterns.",
+            STRUCTURAL: "Structural features look at how the code is organized, such as functions, classes, assignments, and statements.",
+            COMPLEXITY: "Complexity features show how complicated the logic is, especially in conditions, branches, and nested code.",
+            COMPLEXITY_MAINTAINABILITY: "These features describe how complex the code is and how easy it may be to read and maintain.",
+            HALSTEAD: "Halstead features measure the use of operators and operands to describe code complexity and coding style.",
+            EMBEDDING: "Embedding features are learned automatically by the model. They capture hidden patterns, but they are not directly human-readable.",
+            OTHER: "Other useful features that do not belong to one main group.",
+            UNMAPPED: "This feature was not mapped to a specific group."
+        };
+
+        const FEATURE_EXPLANATIONS = {
+            avgIdentifierLength: "The average length of names like variables, functions, and classes.",
+            avgLineLength: "The average number of characters in each line of code.",
+            avgFunctionLength: "The average number of lines inside each function.",
+            keywordsDensity: "How often programming keywords appear in the code.",
+            numKeywordsDensity: "How many different keywords are used across the code.",
+            numLiteralsDensity: "How often literal values like numbers and strings appear.",
+            stdDevLineLength: "How much line lengths change from one line to another.",
+            ASTNodeTypesTF: "How often different AST node types appear in the code structure.",
+            ASTNodeTypeAvgDep: "The average depth of AST node types inside the code tree.",
+            branchingFactor: "How many branches each part of the code structure tends to create.",
+            maxDepthASTNode: "The deepest level reached in the AST structure.",
+            nestingDepth: "How deeply loops, conditions, or blocks are nested inside each other.",
+            maxDecisionTokens: "How complex the largest condition is, based on how many tokens it contains.",
+            numFunctionsDensity: "How often functions are defined in the code.",
+            numFunctionCallsDensity: "How often functions or methods are called.",
+            numClassesDensity: "How often classes are defined in the code.",
+            numAssignmentStmtDensity: "How often assignment statements are used.",
+            numStatementsDensity: "How many executable statements appear in the code.",
+            numVariablesDensity: "How many variables are assigned values.",
+            numInputStmtsDensity: "How often input-related statements are used.",
+            sloc: "The total number of source lines in the code, excluding blank lines and comments.",
+            avgParams: "The average number of parameters used in functions.",
+            stdDevNumParams: "How much the number of function parameters changes between functions.",
+            cyclomaticComplexity: "A measure of how many different logic paths the code has.",
+            maintainabilityIndex: "A score that estimates how easy the code is to read and maintain.",
+            numberOfDistinctOperands: "The number of different operands used, such as variables and constants.",
+            numberOfDistinctOperators: "The number of different operators used, such as +, -, =, and others.",
+            totalNumberOfOperands: "The total number of operand uses in the code.",
+            totalNumberOfOperators: "The total number of operator uses in the code.",
+            def_Density: "How often function definitions appear.",
+            for_Density: "How often for loops appear.",
+            if_Density: "How often if statements appear.",
+            while_Density: "How often while loops appear.",
+            elif_Density: "How often elif branches appear.",
+            else_Density: "How often else branches appear.",
+            break_Density: "How often break statements appear.",
+            continue_Density: "How often continue statements appear.",
+            return_Density: "How often return statements appear.",
+            yield_Density: "How often yield statements appear.",
+            try_Density: "How often try blocks appear.",
+            except_Density: "How often except blocks appear.",
+            import_Density: "How often import statements appear.",
+            from_Density: "How often from ... import statements appear.",
+            class_Density: "How often class definitions appear.",
+            lambda_Density: "How often lambda expressions appear.",
+            emptyLinesDensity: "How often empty lines appear in the code.",
+            whiteSpaceRatio: "How much spacing and indentation are used in the code."
+        };
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function readJson(key) {
+            try {
+                return JSON.parse(sessionStorage.getItem(key) || "[]");
+            } catch {
+                return [];
+            }
+        }
+
+        function formatShap(value) {
+            const num = Number(value || 0);
+            return `${num >= 0 ? "+" : ""}${num.toFixed(4)}`;
+        }
+
+        function cleanFeatureType(value) {
+            const normalized = String(value || "").trim().toLowerCase();
+
+            if (
+                normalized === "software_engineering_features" ||
+                normalized === "software engineering features" ||
+                normalized === "manual"
+            ) {
+                return "software engineering";
+            }
+
+            if (normalized === "embedding") {
+                return "Embedding";
+            }
+
+            return value || "-";
+        }
+
+        function getGroupExplanation(group) {
+            const key = String(group || "UNMAPPED").trim().toUpperCase();
+            return GROUP_EXPLANATIONS[key] || "Explanation will be added later.";
+        }
+
+        function getManualFeatureExplanation(feature, group) {
+            const name = String(feature || "").trim();
+
+            if (FEATURE_EXPLANATIONS[name]) {
+                return FEATURE_EXPLANATIONS[name];
+            }
+
+            if (name.startsWith("nttf_")) {
+                const cleanName = name.replace("nttf_", "").replaceAll("_", " ");
+                return `This is an AST frequency feature. It shows how often '${cleanName}' appears in the code structure. It belongs to the ${group} group.`;
+            }
+
+            if (name.startsWith("ntad_")) {
+                const cleanName = name.replace("ntad_", "").replaceAll("_", " ");
+                return `This is an AST depth feature. It shows how deeply '${cleanName}' appears in the code structure. It belongs to the ${group} group.`;
+            }
+
+            if (name.endsWith("_Density")) {
+                const cleanName = name.replace("_Density", "").replaceAll("_", " ");
+                return `This is a density feature. It shows how often '${cleanName}' appears in the code. It belongs to the ${group} group.`;
+            }
+
+            return `This is a  software-engineering feature assigned to the ${group} group.`;
+        }
+
+        function formatEvidenceValue(value, digits = 4) {
+            if (value === null || value === undefined || value === "") {
+                return "-";
+            }
+
+            const num = Number(value);
+            if (Number.isFinite(num)) {
+                return num.toFixed(digits);
+            }
+
+            return String(value);
+        }
+
+        function explainFeature(item) {
+            const feature = item.feature || "-";
+            const type = cleanFeatureType(item.feature_type);
+            const group = item.group || "-";
+
+            if (type === "Embedding" || String(feature).startsWith("emb_")) {
+                const groupCorrSum = formatEvidenceValue(item.group_corr_sum);
+                const nPairs = formatEvidenceValue(item.n_pairs, 0);
+                const maxCorr = formatEvidenceValue(item.max_corr);
+                const groupRank = formatEvidenceValue(item.group_rank, 0);
+                const groupSupport = formatEvidenceValue(item.group_support);
+
+                return `${feature} is a CodeBERT embedding feature. It is not directly human-readable like software-engineering software metrics. It was linked to the ${group} group because it shows high correlation with this group.`;
+            }
+
+            return getManualFeatureExplanation(feature, group);
+        }
+
+        function renderTopFeatures() {
+            const tbody = document.getElementById("topFeaturesBody");
+            const topFeatures = readJson("kasif_top_features")
+                .slice()
+                .sort((a, b) => Math.abs(Number(b.shap_value || 0)) - Math.abs(Number(a.shap_value || 0)))
+                .slice(0, 20);
+
+            if (!topFeatures.length) {
+                return;
+            }
+
+            tbody.innerHTML = topFeatures.map((item, index) => {
+                const typeLabel = cleanFeatureType(item.feature_type);
+                const typeClass = typeLabel.toLowerCase();
+
+                return `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td><strong>${escapeHtml(item.feature || "-")}</strong></td>
+                        <td><span class="type-pill ${escapeHtml(typeClass)}">${escapeHtml(typeLabel)}</span></td>
+                        <td>${escapeHtml(item.group || "-")}</td>
+                        <td>${escapeHtml(formatShap(item.shap_value))}</td>
+                        <td>${escapeHtml(item.direction || "-")}</td>
+                        <td class="feature-explanation-cell">${escapeHtml(explainFeature(item))}</td>
+                    </tr>
+                `;
+            }).join("");
+        }
+
+        function renderGroupExplanationCards() {
+            const grid = document.getElementById("groupExplanationGrid");
+            const groups = readJson("kasif_grouped_influences");
+
+            const groupNames = groups.length
+                ? [...new Set(groups.map((item) => item.group).filter(Boolean))]
+                : ["LEXICAL", "SYNTACTIC", "STRUCTURAL", "COMPLEXITY_MAINTAINABILITY", "HALSTEAD", "EMBEDDING"];
+
+            grid.innerHTML = groupNames.map((group) => {
+                return `
+                    <div class="details-mini-card">
+                        <h3>${escapeHtml(group)}</h3>
+                        <p>${escapeHtml(getGroupExplanation(group))}</p>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        renderTopFeatures();
+        renderGroupExplanationCards();
+    </script>
+</body>
+</html>

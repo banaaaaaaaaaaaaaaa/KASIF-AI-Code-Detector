@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KÂŞİF - AI Code Detector</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/highlighted_code.css') }}" />
+</head>
+
+<body>
+    <main class="app-shell">
+        <header class="app-header">
+            <div class="app-brand">
+                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="KÂŞİF Logo" class="app-logo">
+                <div class="app-brand-text">
+                    <h1 class="app-title">KÂŞİF</h1>
+                    <p class="app-subtitle">AI Code Detector</p>
+                </div>
+            </div>
+        </header>
+
+        <section class="workspace workspace--main">
+            <!-- LEFT: code input only -->
+            <aside class="left-column">
+                <div class="panel editor-panel">
+                    <div class="panel-heading">
+                        <h2 class="panel-title">Code Input</h2>
+                    </div>
+
+                    <div class="input-actions">
+                        <label class="upload-btn" for="codeFileInput">Upload code file</label>
+                        <input id="codeFileInput" type="file" accept=".py,.txt,.java,.cpp,.c,.js,.ts,.cs,.ipynb" hidden />
+                        <span class="input-hint">or paste code below</span>
+                    </div>
+
+                    <label class="section-label" for="codeInput">Source Code</label>
+
+                    <div class="code-editor-shell" id="codeEditorShell">
+                        <div id="codeOverlay" class="code-overlay" aria-hidden="true"></div>
+                        <textarea
+                            id="codeInput"
+                            class="code-textarea code-textarea--overlay"
+                            placeholder="Paste Python code here..."
+                            spellcheck="false"
+                            wrap="off"
+                        ></textarea>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- RIGHT: configuration first, then result/probability -->
+            <section class="right-column">
+                <button
+                    type="button"
+                    class="training-update-btn"
+                    data-tooltip="Send code to latest ChatGPT version and update training codes. This feature is currently under development. In the future, it may send selected code to the latest ChatGPT version and update the training-code set.">
+                </button>
+
+                <div class="panel config-panel">
+                    <h2 class="panel-title">Configuration</h2>
+
+                    <div class="field-group">
+                        <span class="section-label">Context</span>
+                    <div class="radio-group" id="categoryGroup">
+                        <label class="radio-pill">
+                            <input type="radio" name="category" value="assignment" checked />
+                            <span>Assignment</span>
+                        </label>
+
+                        <label class="radio-pill">
+                            <input type="radio" name="category" value="labs-aybu"  />
+                            <span>Lab</span>
+                        </label>
+
+                        <label class="radio-pill">
+                            <input type="radio" name="category" value="exams-aybu" />
+                            <span>Exam</span>
+                        </label>
+                    </div>
+
+                    <button id="analyzeBtn" class="primary-btn" type="button">Run Analysis</button>
+                </div>
+
+                <div class="analysis-panel-stack">
+    <div class="panel prediction-probability-panel">
+        <div class="prediction-panel-head">
+            <h3 class="panel-title">Prediction</h3>
+
+            <div class="prediction-head-actions">
+                <div class="tooltip-host prediction-tooltip-host">
+                    <div id="predictionValue" class="prediction-badge is-neutral">-</div>
+                    <div id="predictionTooltip" class="hover-tooltip">
+                        Hover over the prediction after running analysis to see what it means.
+                    </div>
+                </div>
+
+                <button
+                    id="downloadReportBtn"
+                    class="icon-btn tooltip-host"
+                    type="button"
+                    aria-label="Download PDF report"
+                >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 3v11"></path>
+                        <path d="M7.5 10.5 12 15l4.5-4.5"></path>
+                        <path d="M4 18.5h16"></path>
+                    </svg>
+                    <div class="hover-tooltip hover-tooltip--download ">
+                        This is a PDF report showing all the information. Click to download all.
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <div class="prediction-divider"></div>
+
+        <div class="prob-row">
+            <div class="prob-labels">
+                <span>AI Probability</span>
+                <span id="aiProbValue">0%</span>
+            </div>
+            <div class="prob-bar-track">
+                <div id="aiProbBar" class="prob-bar-fill ai" style="width: 0%;"></div>
+            </div>
+        </div>
+
+        <div class="prob-row prob-row--spaced">
+            <div class="prob-labels">
+                <span>Human Probability</span>
+                <span id="humanProbValue">0%</span>
+            </div>
+            <div class="prob-bar-track">
+                <div id="humanProbBar" class="prob-bar-fill human" style="width: 0%;"></div>
+            </div>
+        </div>
+
+        <div id="resultCaution" class="result-note result-note--caution">
+            <div class="note-icon">i</div>
+            <div class="note-text">
+                <strong>Caution:</strong>
+                <span id="resultCautionText">
+                    This result alone is not enough. Please also review the explanation and reasons before making a final decision.
+                </span>
+            </div>
+        </div>
+
+       
+
+       
+    </div>
+</div>
+            </section>
+        </section>
+
+        <!-- BOTTOM: group influence and SHAP next to each other -->
+        <section class="explanation-row">
+            <div class="panel summary-panel">
+                <div class="group-section-header">
+                    <h3 class="group-section-title title-with-info">
+                        Group Influence Percentages
+                        <span
+                            id="groupPanelInfoIcon"
+                            class="group-info-icon title-info-icon"
+                            data-tooltip="This section shows how much each feature group contributed among the displayed important features."
+                            aria-label="Group influence explanation"
+                            tabindex="0"
+                        >ⓘ</span>
+                    </h3>
+                    <div id="groupSummaryTopbar"></div>
+                </div>
+                <div id="groupSummaryContainer" class="group-summary-container">
+                    <div class="empty-state-box">No group summary yet.</div>
+                </div>
+            </div>
+
+            <div class="panel waterfall-panel">
+                <div class="group-section-header">
+                    <h3 class="section-title title-with-info">
+                        SHAP Waterfall
+                        <span
+                            id="waterfallPanelInfoIcon"
+                            class="group-info-icon title-info-icon"
+                            data-tooltip="This section shows the most important features that influenced the prediction."
+                            aria-label="SHAP waterfall explanation"
+                            tabindex="0"
+                        >ⓘ</span>
+                    </h3>
+                    <div id="waterfallTopbar" class="section-topbar"></div>
+                </div>
+                <div id="waterfallContainer" class="waterfall-container">
+                    <div class="empty-state-box waterfall-empty">No SHAP waterfall yet.</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        © 2026 KÂŞİF AI Code Detector. All rights reserved.
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/waterfall.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
